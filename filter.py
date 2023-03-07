@@ -31,6 +31,10 @@ from imageOperations import *
 # 4. Crop:      Crop the image and save the file with the found ID parameters (thickness, residual stress, id)
 # 
 
+residual_stresses = {
+    
+}
+
 def get_unique_file_id(file):
     """Get the first 4 numbers of cullet scanner file name.
     Format is: [ID] [Date] ([img_type]).[ext]
@@ -80,12 +84,12 @@ def get_series_box(img0, strength = 1):
     gray = to_gray(img0)
     
     thresh = gray
-    plot(gray)
-    # _, thresh = cv2.threshold(thresh, 80, 255, cv2.THRESH_BINARY)
-    #thresh = cv2.GaussianBlur(thresh, (3,3), 3)
-    # _, thresh = cv2.threshold(thresh, 120-strength*5, 255, cv2.THRESH_BINARY)
+    #plot(gray)
+    _, thresh = cv2.threshold(thresh, 180, 255, cv2.THRESH_BINARY)
+    thresh = cv2.GaussianBlur(thresh, (3,3), 0)
+    _, thresh = cv2.threshold(thresh, 130-strength*5, 255, cv2.THRESH_BINARY)
     # ret, thresh = cv2.threshold(thresh, 60, 255, cv2.THRESH_BINARY)
-    thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)        
+    #thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)        
     
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
     # thresh = cv2.erode(thresh, kernel, iterations=1)
@@ -102,13 +106,28 @@ def get_series_box(img0, strength = 1):
         x, y, w, h = cv2.boundingRect(cnt)
         textboxes.append((x, y, w, h))
         cv2.rectangle(im, (x,y), (x+w,y+h), (255,0,0), 2)
-        cv2.rectangle(thresh, (x,y), (x+w,y+h), (255,0,0), 2)
+        cv2.rectangle(thresh, (x,y), (x+w,y+h), (0,0,0), 2)
     
-    # plot(thresh)
+    plot(thresh)
     plot(im)
     
     
     return textboxes
+
+def validate_possible_series_id(id: str) -> str | None:
+    """Validate the found ID for the series. Should take action if the ID matches an entry in the
+    series matrix!
+
+    Args:
+        id (str): The ID found by the OCR process.
+
+    Returns:
+        str | None: A valid ID or None, if nothing matched.
+    """
+    if len(id) > 0 and re.match(r"(\d+)\.(\d+)\.(\d+)", id):
+        return id
+    
+    return None
 
 def ocr_on_crop(img, reader: PaddleOCR):
     text = reader.ocr(img, cls = False, det=False, )[0]
@@ -116,8 +135,11 @@ def ocr_on_crop(img, reader: PaddleOCR):
     if len(text) > 0:
         print(text)
         plot(img)
-    if len(text) > 0 and re.match(r"(\d+)\.(\d+)\.(\d+)", text[0][0]):
-        return (True, text[0][0])
+        
+    text = validate_possible_series_id(text[0][0])
+        
+    if text != None:
+        return (True, text)
     
     return (False, "")
 
