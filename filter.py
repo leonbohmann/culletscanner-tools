@@ -19,8 +19,8 @@ from itertools import groupby
 import cv2
 import matplotlib.pyplot as plt
 import shutil
-from easyocr import Reader
 import re
+from paddleocr import PaddleOCR
 
 from imageOperations import *
 # Script for converting CulletScanner Images
@@ -83,9 +83,9 @@ def get_series_box(img0, strength = 1):
     plot(gray)
     # _, thresh = cv2.threshold(thresh, 80, 255, cv2.THRESH_BINARY)
     #thresh = cv2.GaussianBlur(thresh, (3,3), 3)
-    _, thresh = cv2.threshold(thresh, 120-strength*5, 255, cv2.THRESH_BINARY)
+    # _, thresh = cv2.threshold(thresh, 120-strength*5, 255, cv2.THRESH_BINARY)
     # ret, thresh = cv2.threshold(thresh, 60, 255, cv2.THRESH_BINARY)
-    #thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)        
+    thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)        
     
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
     # thresh = cv2.erode(thresh, kernel, iterations=1)
@@ -110,8 +110,18 @@ def get_series_box(img0, strength = 1):
     
     return textboxes
 
+def ocr_on_crop(img, reader: PaddleOCR):
+    text = reader.ocr(img, cls = False, det=False, )[0]
+    # text = reader.readtext(roi, detail=0, allowlist = "0123456789.", width_ths = 10, add_margin = 10)
+    if len(text) > 0:
+        print(text)
+        plot(img)
+    if len(text) > 0 and re.match(r"(\d+)\.(\d+)\.(\d+)", text[0][0]):
+        return (True, text[0][0])
+    
+    return (False, "")
 
-def get_series_id(img0, reader: Reader, showRoi = False, strength = 1):
+def get_series_id(img0, reader: PaddleOCR, showRoi = False, strength = 1):
     """Uses an OCR Reader to analyze a given image of a glass pane.
 
     Args:
@@ -127,6 +137,11 @@ def get_series_id(img0, reader: Reader, showRoi = False, strength = 1):
     x0, y0, w0, h0 = 500, 5, 500, 100  # x, y, width, height
     roi = img0[y0:y0+h0, x0:x0+w0]
     
+    # try the whole picture first
+    # (valid, text) = ocr_on_crop(prepare_ocr(roi, 2, strength), reader)
+    # if valid:
+    #     return text
+    
     possible_textboxes = get_series_box(roi, strength)
     found_texts = []
     
@@ -141,13 +156,11 @@ def get_series_id(img0, reader: Reader, showRoi = False, strength = 1):
 
         # roi = optimizeImgForPerspectiveCrop(roi)
         roi = prepare_ocr(roi, 2, strength)
-        # text = ocr.ocr(roi, det=False, cls=True)
-        text = reader.readtext(roi, detail=0, allowlist = "0123456789.", width_ths = 10, add_margin = 10)
-        if len(text) > 0:
-            print(text)
-            plot(roi)
-        if len(text) > 0 and re.match(r"(\d+)\.(\d+)\.(\d+)", text[0]):
-            return text[0]
+        
+        # perform ocr on roi
+        (valid, text) = ocr_on_crop(roi, reader)
+        if valid: 
+            return text
         
         
      
@@ -192,7 +205,7 @@ if __name__ == "__main__":
         os.makedirs(cropped_renamed_dir)
     
     # when renaming output, create ocr reader        
-    reader = Reader(['en'],gpu = True, ) # load once only in memory.
+    reader = PaddleOCR(lang='en',  use_space_char = False, ) # load once only in memory.
    
 #    ocr = paddleocr.PaddleOCR(use_angle_cls=True, lang='en') # need to run only once to download and load model into memory
 
@@ -235,8 +248,6 @@ if __name__ == "__main__":
             print(f"\t> Series: {groupkey}")
             
             if groupkey == "unknown":
-                groupkey = key                
-            else:
                 groupkey = key
 
 
