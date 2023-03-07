@@ -299,3 +299,9 @@ if __name__ == "__main__":
             pass
         
         
+"""
+TODO:
+- Eingabe-Bilder immer richtig rotieren (um 90° im Uhrzeigersinn, da im CulletScanner Schrift parallel zur Schubrichtung)
+- Einheitliche Beschriftung wählen und auf kommende Scheiben übertragen
+
+"""
