@@ -73,10 +73,6 @@ if __name__ == "__main__":
         plt.xticks([]), plt.yticks([])  # to hide tick values on X and Y axis
         plt.show()
         
-        # create temporary roi file
-        temp_img = tempfile.NamedTemporaryFile(delete=False)
-        cv2.imwrite(temp_img.name + ".png", roi)
-        
         r_easy_ocr=reader.readtext(roi,detail=0)
         print(r_easy_ocr)
         # results = pytesseract.image_to_data(roi, output_type=Output.DICT)

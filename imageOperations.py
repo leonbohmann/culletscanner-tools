@@ -1,6 +1,11 @@
 import cv2
 import numpy as np
 
+class CropException(Exception):
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+        
+
 def crop_rectangle(src, cntr, useMask = False, drawContour = False, drawColor = (0,0,255), drawStroke = 1):
     """Crops the normal rectangle around a contour from an image.
 
@@ -98,18 +103,6 @@ def crop(im):
     return crop_rectangle_rot(orig, max_contour[0])
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 def fourCornersSort(pts):
     """ Sort corners: top-left, bot-left, bot-right, top-right """
     # Difference and sum of x and y value
@@ -134,16 +127,60 @@ def contourOffset(cnt, offset):
     cnt[cnt < 0] = 0
     return cnt
 
+def isgray(img):
+    if len(img.shape) < 3: return True
+    if img.shape[2]  == 1: return True
+    b,g,r = img[:,:,0], img[:,:,1], img[:,:,2]
+    return False
+
+def optimizeImgForPerspectiveCrop(image):
+    """Optimizes an image to be read by an OCR-Algorithm.
+
+    Args:
+        image (image): The image to be optimized.
+
+    Returns:
+        image: The copied optimized image.
+    """
+    ## convert the footer for contour retrieval
+    # convert to grayscale
+    gray = to_gray(image)
+    # get a kernel of the image structure
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    # dilate inflates the view
+    dilate = cv2.dilate(gray, kernel, iterations=1)    
+    dilate = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    dilate = cv2.GaussianBlur(dilate, (5,5), 0)
+    
+    return dilate
+
+def to_gray(img):
+    if not isgray(img):
+        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    return img
+
 def rotate_img(img, rotCode):
     return cv2.rotate(img, rotCode)
 
-def prepare_ocr(img0):
+def prepare_ocr(img0, scale = 1, strength = 1):
     #norm_img = np.zeros((img0.shape[0], img0.shape[1]))
-    #img = cv2.normalize(img0, norm_img, 0, 255, cv2.NORM_MINMAX)
-    img = cv2.resize(img0, (img0.shape[1] * 2, img0.shape[0] * 2))
-    img = cv2.GaussianBlur(img, (5, 5), 3)
-    img = cv2.threshold(img, 100, 255, cv2.THRESH_BINARY)[1]
+    #img = cv2.normalize(img0, norm_img, 0, 255, cv2.NORM_MINMAX)    
+    img = cv2.resize(img0, (img0.shape[1] * scale, img0.shape[0] * scale))
+    img = to_gray(img)
+    #img = cv2.threshold(img, 60, 255, cv2.THRESH_BINARY)[1]
+    _, img = cv2.threshold(img, 60+strength * 3,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    # # get a kernel of the image structure
+    # kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    # # dilate inflates the view
+    # img = cv2.dilate(img, kernel, iterations=strength)
     return img
+
+def combineImgs(imgs):
+    dest = cv2.add(255-imgs[0],255-imgs[1])
+    dest = cv2.add(255-imgs[2], dest)
+    
+    return 255-dest
 
 def crop_perspective(img):
     """Crops a given image to its containing pane bounds. Finds smallest pane countour with 4 corner points
@@ -156,15 +193,10 @@ def crop_perspective(img):
         Exception: If the found countour does not have exactly 4 corner points it is not considered a glass pane.
 
     Returns:
-        img: A cropped image which only contains the glass pane.
+        img: A cropped image which only contains the glass pane. Size: 1000x1000.
     """
-    # convert to gray
-    im = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-    # apply gaussian blur to image to we can get rid of some noise
-    im = cv2.GaussianBlur(im, (5,5), 5)
-    # restore original image by thresholding
-    _,im = cv2.threshold(im,127,255,0)
-
+    # convert to optimized version
+    im = optimizeImgForPerspectiveCrop(img)
 
     # fetch contour information
     contour_info = []
@@ -179,15 +211,11 @@ def crop_perspective(img):
 
     # sort contours after their area
     contour_info = sorted(contour_info, key=lambda c: c[2], reverse=True)
-    # take the second largest contour (this has to be the outer bounds of pane)
-    max_contour = contour_info[1][0]
-    
-    # stencil will have white for every splinter
-    stencil = np.zeros(img.shape).astype(img.dtype)    
-    # dont fill the pane and scanner boundaries (:-2)
-    cv2.fillPoly(stencil, contours[:-2], [255, 255, 255])
-    # take original image, where stencil is white
-    img = cv2.bitwise_and(img,stencil)
+    # take the second largest contour (this has to be the outer bounds of pane)    
+    try:
+        max_contour = contour_info[1][0]
+    except IndexError:
+        raise CropException()        
 
     # Simplify contour
     perimeter = cv2.arcLength(max_contour, True)
@@ -201,7 +229,7 @@ def crop_perspective(img):
         maxAreaFound = cv2.contourArea(approx)
         pageContour = approx
     else:
-        raise Exception("Pane boundary could not be found.")
+        raise CropException("Pane boundary could not be found.")
 
     # Sort and offset corners
     pageContour = fourCornersSort(pageContour[:, 0])

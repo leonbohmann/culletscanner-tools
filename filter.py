@@ -16,10 +16,11 @@ import argparse
 from argparse import RawTextHelpFormatter
 import os
 from itertools import groupby
-import tempfile
 import cv2
 import matplotlib.pyplot as plt
 import shutil
+from easyocr import Reader
+import re
 
 from imageOperations import *
 # Script for converting CulletScanner Images
@@ -42,6 +43,18 @@ def get_unique_file_id(file):
     """
     return os.path.basename(file)[:4]
 
+def get_img_type(file):
+    """Extracts an image type of input file name.
+
+    Args:
+        file (str): File name or file path.
+
+    Returns:
+        str: Type of Image (BrightPolarizedGreen, Blue, Transmission)
+    """
+    name = os.path.basename(file)
+    match = re.search(r"\[(.*)\]", name)
+    return match.group(1)
   
 def raiseIfWrongArea(area):
     """Check found pane pixel area.
@@ -53,8 +66,102 @@ def raiseIfWrongArea(area):
         Exception: Raises exception, if area is either too large or too small!
     """
     if area < 15_000_000 or area > 17_000_000:
-        raise Exception(f"Area {area} can't be a pane!")
+        raise CropException(f"Area {area} can't be a pane!")
 
+def plot(img):
+    plt.figure()
+    plt.imshow(img, cmap = 'gray', interpolation = 'bicubic')
+    plt.xticks([]), plt.yticks([])  # to hide tick values on X and Y axis
+    plt.show()
+
+def get_series_box(img0, strength = 1):
+    # Convert the image to grayscale
+    im = img0.copy()
+    gray = to_gray(img0)
+    
+    thresh = gray
+    plot(gray)
+    # _, thresh = cv2.threshold(thresh, 80, 255, cv2.THRESH_BINARY)
+    #thresh = cv2.GaussianBlur(thresh, (3,3), 3)
+    _, thresh = cv2.threshold(thresh, 120-strength*5, 255, cv2.THRESH_BINARY)
+    # ret, thresh = cv2.threshold(thresh, 60, 255, cv2.THRESH_BINARY)
+    #thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)        
+    
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    # thresh = cv2.erode(thresh, kernel, iterations=1)
+    thresh = cv2.erode(thresh, kernel, iterations=strength)        
+    
+    contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    
+    textboxes = []
+    
+    
+    # Iterate through contours
+    for cnt in contours:
+        # Find the bounding rectangle around the contour
+        x, y, w, h = cv2.boundingRect(cnt)
+        textboxes.append((x, y, w, h))
+        cv2.rectangle(im, (x,y), (x+w,y+h), (255,0,0), 2)
+        cv2.rectangle(thresh, (x,y), (x+w,y+h), (255,0,0), 2)
+    
+    # plot(thresh)
+    plot(im)
+    
+    
+    return textboxes
+
+
+def get_series_id(img0, reader: Reader, showRoi = False, strength = 1):
+    """Uses an OCR Reader to analyze a given image of a glass pane.
+
+    Args:
+        img0 (Image): Image of the full glass pane.
+        reader (easyOCR.Reader): Reader.
+        showRoi (bool, optional): Display the ROI. Defaults to False.
+
+    Returns:
+        str: Found OCR string.
+    """
+    
+    # find mark
+    x0, y0, w0, h0 = 500, 5, 500, 100  # x, y, width, height
+    roi = img0[y0:y0+h0, x0:x0+w0]
+    
+    possible_textboxes = get_series_box(roi, strength)
+    found_texts = []
+    
+    for box in possible_textboxes:
+        x, y, w, h = box
+        roi = img0[y+y0:y+y0+h, x+x0:x+x0+w]
+        
+        if roi.shape[0] > 300: continue
+        if roi.shape[0] < 20: continue
+        if roi.shape[1] > 300: continue
+        if roi.shape[1] < 20: continue
+
+        # roi = optimizeImgForPerspectiveCrop(roi)
+        roi = prepare_ocr(roi, 2, strength)
+        # text = ocr.ocr(roi, det=False, cls=True)
+        text = reader.readtext(roi, detail=0, allowlist = "0123456789.", width_ths = 10, add_margin = 10)
+        if len(text) > 0:
+            print(text)
+            plot(roi)
+        if len(text) > 0 and re.match(r"(\d+)\.(\d+)\.(\d+)", text[0]):
+            return text[0]
+        
+        
+     
+    if strength < 10: 
+        return get_series_id(img0, reader, showRoi, strength + 1)
+    else:
+        return "unknown"
+    # if showRoi:
+    #     plt.figure()
+    #     plt.imshow(roi, cmap = 'gray', interpolation = 'bicubic')
+    #     plt.xticks([]), plt.yticks([])  # to hide tick values on X and Y axis
+    #     plt.show()
+    
+    # return reader.readtext(roi,detail=0)        
 
 #
 ## FILTER PROCEDURE
@@ -63,22 +170,32 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
     
     parser.description = descr
-    parser.add_argument("-i", "--input-dir", help="Input directory with unsorted scan output image files.", type=str, default=r"a:\Nextcloud\Forschung\Scans")    
+    parser.add_argument("-i", "--input-dir", help="Input directory with unsorted scan output image files.", type=str, default=r"d:\Forschung\Glasbruch\Versuche.Reihe\Bilder")    
     parser.add_argument("-o", "--output-dir", help="Directory to place the filtered images in.", type=str, default=r"filtered")    
+    parser.add_argument("-r", "--rotate", help="Rotate images.", type=bool, default=True)    
 
     args = parser.parse_args()
     
     root_dir = args.input_dir
     filtered_dir = args.output_dir
-    destImg = os.path.join(filtered_dir, "cropped")
+    cropped_renamed_dir = os.path.join(filtered_dir, "cropped")
+    rotate = args.rotate
+    
+    rotate = False
     
     # create output dir
     if not os.path.exists(filtered_dir):
         os.makedirs(filtered_dir)
         
     # create cropped img dir
-    if not os.path.exists(destImg):
-        os.makedirs(destImg)
+    if not os.path.exists(cropped_renamed_dir):
+        os.makedirs(cropped_renamed_dir)
+    
+    # when renaming output, create ocr reader        
+    reader = Reader(['en'],gpu = True, ) # load once only in memory.
+   
+#    ocr = paddleocr.PaddleOCR(use_angle_cls=True, lang='en') # need to run only once to download and load model into memory
+
     
     # analyze only these extensions (used to filter out unwanted files)
     extensions = [".bmp", ".zip"]
@@ -92,29 +209,61 @@ if __name__ == "__main__":
     grouped_files = {k: list(g) for k, g in groupby(sorted_files, key=get_unique_file_id)}
 
     for key, group in grouped_files.items():        
-        # find first file in group that has bmp extension
-        img0_path = next(file for file in group if file.endswith(".bmp"))
+        # get bitmaps from group
+        img0_path = next(file for file in group if file.endswith(".bmp") and "Blue" in file)
         # load image and perform OCR to find specimen Identifier ([thickness].[residual_stress].[boundary].[ID])
         img0 = cv2.imread(img0_path)        
-       
+
+
+        # this tries to combine all three images
+        # imgs = [cv2.imread(file) for file in group if file.endswith(".bmp")]
+        # img0 = combineImgs(imgs)
+               
+            
         try:
             maxArea, img0 = crop_perspective(img0)
+            if rotate:
+                img0 = rotate_img(img0, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            
             raiseIfWrongArea(maxArea)
 
             print(f"Series {key} has visible pane. Area={maxArea}")
+            
+            # find group name by running OCR on image            
+            # get series id from image
+            groupkey = get_series_id(img0, reader, True)
+            print(f"\t> Series: {groupkey}")
+            
+            if groupkey == "unknown":
+                groupkey = key                
+            else:
+                groupkey = key
+
 
             for file in group:       
-                filename =  os.path.basename(file)    
+                filename =  os.path.basename(file)                
                 dest = os.path.join(filtered_dir, filename)
+                
                 shutil.copy2(file, dest)
+                shutil.copystat(file, dest)
                 
                 
                 if filename.endswith(".bmp"):
+                    # get img type
+                    imgType = get_img_type(filename)
+                    imgKey = groupkey
+                    
+                    filename = f"{imgKey}-{imgType}.bmp"
+                    
                     im = cv2.imread(file)
                     _,im = crop_perspective(im)
                     im = rotate_img(im, cv2.ROTATE_90_COUNTERCLOCKWISE)
-                    cv2.imwrite(os.path.join(destImg, filename), im )
-        except:
+                    
+                    cropped_img_path = os.path.join(cropped_renamed_dir, filename)
+                    cv2.imwrite(cropped_img_path , im)
+                    shutil.copystat(file, cropped_img_path)
+                    
+        except CropException:
             pass
         
-      
+        
