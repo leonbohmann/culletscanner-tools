@@ -289,8 +289,7 @@ if __name__ == "__main__":
                     filename = f"{imgKey}-{imgType}.bmp"
                     
                     im = cv2.imread(file)
-                    _,im = crop_perspective(im)
-                    im = rotate_img(im, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                    _,im = crop_perspective(im, 4000)
                     
                     cropped_img_path = os.path.join(cropped_renamed_dir, filename)
                     cv2.imwrite(cropped_img_path , im)
