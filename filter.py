@@ -85,8 +85,8 @@ def get_series_box(img0, strength = 1):
     
     thresh = gray
     #plot(gray)
-    _, thresh = cv2.threshold(thresh, 180, 255, cv2.THRESH_BINARY)
-    thresh = cv2.GaussianBlur(thresh, (3,3), 0)
+    # _, thresh = cv2.threshold(thresh, 180, 255, cv2.THRESH_BINARY)
+    # thresh = cv2.GaussianBlur(thresh, (3,3), 0)
     _, thresh = cv2.threshold(thresh, 130-strength*5, 255, cv2.THRESH_BINARY)
     # ret, thresh = cv2.threshold(thresh, 60, 255, cv2.THRESH_BINARY)
     #thresh = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,11,2)        
@@ -108,8 +108,8 @@ def get_series_box(img0, strength = 1):
         cv2.rectangle(im, (x,y), (x+w,y+h), (255,0,0), 2)
         cv2.rectangle(thresh, (x,y), (x+w,y+h), (0,0,0), 2)
     
-    plot(thresh)
-    plot(im)
+    # plot(thresh)
+    # plot(im)
     
     
     return textboxes
@@ -134,7 +134,7 @@ def ocr_on_crop(img, reader: PaddleOCR):
     # text = reader.readtext(roi, detail=0, allowlist = "0123456789.", width_ths = 10, add_margin = 10)
     if len(text) > 0:
         print(text)
-        plot(img)
+        # plot(img)
         
     text = validate_possible_series_id(text[0][0])
         

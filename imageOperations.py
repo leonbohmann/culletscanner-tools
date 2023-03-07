@@ -182,7 +182,7 @@ def combineImgs(imgs):
     
     return 255-dest
 
-def crop_perspective(img):
+def crop_perspective(img, size = 1000):
     """Crops a given image to its containing pane bounds. Finds smallest pane countour with 4 corner points
     and aligns, rotates and scales the pane to fit a resulting image.
 
@@ -236,7 +236,7 @@ def crop_perspective(img):
     #pageContour = contourOffset(pageContour, (-3,-3))
 
     # Create target points
-    width=height=1000
+    width=height=size
     tPoints = np.array([[0, 0],
                     [0, height],
                     [width, height],
