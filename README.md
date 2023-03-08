@@ -1,17 +1,26 @@
 # culletscanner-tools
 Tools for CulletScanner Debug output images.
 
-##  PaddleOCR
+## What it does
+This tool can filter input images (see test_imgs) and check, if a glass pane is detected.
 
-PaddleOCR gives better results for handwritten series IDs. To use PaddleOCR:
+After Cropping the glass pane out of the scan image, the cropped result will be placed in the output directory next to the copied source scan file.
 
-* Switch to `paddle` branch
-* Create virtual environment
+When scanning the output images, the tool uses OCR techniques to try and identify a handwritten Series ID, which must be placed somewhere in the top right corner of the glass. If the recognition fails, the input debug id from cullet scanner file name is used.
+
+
+##  Usage
+
+PaddleOCR gives better results for handwritten series IDs but requires some more packages to be installed.
+
+### Installation:
+* `git clone https://github.com/leonbohmann/culletscanner-tools`
+* (*Recommended*) Create virtual python environment
 * `pip install -r paddle_requirements.txt`
 * Run `python filter.py -h`
 
 
-## Basic usage
+### Basic usage
 
 
 ```bat
@@ -38,9 +47,3 @@ options:
   -o OUTPUT_DIR, --output-dir OUTPUT_DIR
                         Directory to place the filtered images in.
 ```
-
-This tool can filter input images (see test_imgs) and check, if a glass pane is detected.
-
-After Cropping the glass pane out of the scan image, the cropped result will be placed in the output directory next to the copied source scan file.
-
-When scanning the output images, the tool uses OCR techniques to try and identify a handwritten Series ID, which must be placed somewhere in the top right corner of the glass. If the recognition fails, the input debug id from cullet scanner file name is used.
