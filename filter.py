@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import shutil
 import re
 from paddleocr import PaddleOCR
+from tqdm import tqdm
 
 from imageOperations import *
 # Script for converting CulletScanner Images
@@ -58,7 +59,10 @@ def get_img_type(file):
     """
     name = os.path.basename(file)
     match = re.search(r"\[(.*)\]", name)
-    return match.group(1)
+    if match:
+        return match.group(1)
+    
+    return "unknown"
   
 def raiseIfWrongArea(area):
     """Check found pane pixel area.
@@ -75,10 +79,20 @@ def raiseIfWrongArea(area):
 def plot(img):
     plt.figure()
     plt.imshow(img, cmap = 'gray', interpolation = 'bicubic')
-    plt.xticks([]), plt.yticks([])  # to hide tick values on X and Y axis
+    plt.xticks([])
+    plt.yticks([])
     plt.show()
 
 def get_series_box(img0, strength = 1):
+    """Perform image manipulation on image to find regions of interest (roi).
+
+    Args:
+        img0 (Image): Image with possible ROIs.
+        strength (int, optional): Strength of image manipulation. Defaults to 1.
+
+    Returns:
+        List<x,y,w,h,>: List with ROIs.
+    """
     # Convert the image to grayscale
     im = img0.copy()
     gray = to_gray(img0)
@@ -130,11 +144,22 @@ def validate_possible_series_id(id: str) -> str | None:
     return None
 
 def ocr_on_crop(img, reader: PaddleOCR):
+    """Perform an OCR Operation on a specific part of the source img.
+
+    Args:
+        img (Image): The image part to analyze.
+        reader (PaddleOCR): Reader for OCRing.
+
+    Returns:
+        (bool, string): (Valid text found?, Found Text)
+    """
     text = reader.ocr(img, cls = False, det=False, )[0]
     # text = reader.readtext(roi, detail=0, allowlist = "0123456789.", width_ths = 10, add_margin = 10)
+    # plot(img)
     if len(text) > 0:
-        print(text)
+        # print(text)
         # plot(img)
+        pass
         
     text = validate_possible_series_id(text[0][0])
         
@@ -143,26 +168,33 @@ def ocr_on_crop(img, reader: PaddleOCR):
     
     return (False, "")
 
-def get_series_id(img0, reader: PaddleOCR, showRoi = False, strength = 1):
+def get_series_id(img0, reader: PaddleOCR, showRoi = False, strength = 1, maxStrength = 15):
     """Uses an OCR Reader to analyze a given image of a glass pane.
 
     Args:
         img0 (Image): Image of the full glass pane.
         reader (easyOCR.Reader): Reader.
         showRoi (bool, optional): Display the ROI. Defaults to False.
+        strength (int, optional): Strength of image manipulation. Gets increased to maxStrength when current 
+                                    strength didn't yield a result. Defaults to 1.
+        maxStrength(int, optional): Maximum strength. Defines the upper bounds of image manipulation strength. Defaults to 15.
 
     Returns:
         str: Found OCR string.
     """
     
     # find mark
-    x0, y0, w0, h0 = 500, 5, 500, 100  # x, y, width, height
+    # x0, y0, w0, h0 = 0, 0, img0.shape[1], img0.shape[0]  # full image
+    x0, y0, w0, h0 = 500, 5, 500, 100  # upper right corner
     roi = img0[y0:y0+h0, x0:x0+w0]
     
-    # try the whole picture first
+    # # try the whole picture first
     # (valid, text) = ocr_on_crop(prepare_ocr(roi, 2, strength), reader)
     # if valid:
     #     return text
+    
+    minSize = (40,40)
+    maxSize = (400,400)
     
     possible_textboxes = get_series_box(roi, strength)
     found_texts = []
@@ -171,10 +203,9 @@ def get_series_id(img0, reader: PaddleOCR, showRoi = False, strength = 1):
         x, y, w, h = box
         roi = img0[y+y0:y+y0+h, x+x0:x+x0+w]
         
-        if roi.shape[0] > 300: continue
-        if roi.shape[0] < 20: continue
-        if roi.shape[1] > 300: continue
-        if roi.shape[1] < 20: continue
+        
+        if roi.shape[0] < minSize[0] or roi.shape[0] > maxSize[0] \
+            or roi.shape[1] < minSize[1] or roi.shape[1] > maxSize[1]: continue        
 
         # roi = optimizeImgForPerspectiveCrop(roi)
         roi = prepare_ocr(roi, 2, strength)
@@ -186,7 +217,7 @@ def get_series_id(img0, reader: PaddleOCR, showRoi = False, strength = 1):
         
         
      
-    if strength < 10: 
+    if strength < maxStrength:
         return get_series_id(img0, reader, showRoi, strength + 1)
     else:
         return "unknown"
@@ -205,7 +236,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
     
     parser.description = descr
-    parser.add_argument("-i", "--input-dir", help="Input directory with unsorted scan output image files.", type=str, default=r"d:\Forschung\Glasbruch\Versuche.Reihe\Bilder")    
+    parser.add_argument("-i", "--input-dir", help="Input directory with unsorted scan output image files.", type=str, default=r"a:\Nextcloud\Forschung\Scans")    
     parser.add_argument("-o", "--output-dir", help="Directory to place the filtered images in.", type=str, default=r"filtered")    
     parser.add_argument("-r", "--rotate", help="Rotate images.", type=bool, default=True)    
 
@@ -216,7 +247,7 @@ if __name__ == "__main__":
     cropped_renamed_dir = os.path.join(filtered_dir, "cropped")
     rotate = args.rotate
     
-    rotate = False
+    # rotate = False
     
     # create output dir
     if not os.path.exists(filtered_dir):
@@ -226,11 +257,9 @@ if __name__ == "__main__":
     if not os.path.exists(cropped_renamed_dir):
         os.makedirs(cropped_renamed_dir)
     
-    # when renaming output, create ocr reader        
-    reader = PaddleOCR(lang='en',  use_space_char = False, ) # load once only in memory.
-   
-#    ocr = paddleocr.PaddleOCR(use_angle_cls=True, lang='en') # need to run only once to download and load model into memory
-
+    # create ocr reader
+    # load once only in memory
+    reader = PaddleOCR(lang='en', show_log=False, use_mp=True, use_gpu = True, ) 
     
     # analyze only these extensions (used to filter out unwanted files)
     extensions = [".bmp", ".zip"]
@@ -243,18 +272,15 @@ if __name__ == "__main__":
     # group files for file id
     grouped_files = {k: list(g) for k, g in groupby(sorted_files, key=get_unique_file_id)}
 
-    for key, group in grouped_files.items():        
+    for key, group in tqdm(grouped_files.items()):
+
+                
         # get bitmaps from group
         img0_path = next(file for file in group if file.endswith(".bmp") and "Blue" in file)
         # load image and perform OCR to find specimen Identifier ([thickness].[residual_stress].[boundary].[ID])
-        img0 = cv2.imread(img0_path)        
+        img0 = cv2.imread(img0_path)
 
 
-        # this tries to combine all three images
-        # imgs = [cv2.imread(file) for file in group if file.endswith(".bmp")]
-        # img0 = combineImgs(imgs)
-               
-            
         try:
             maxArea, img0 = crop_perspective(img0)
             if rotate:
@@ -262,12 +288,18 @@ if __name__ == "__main__":
             
             raiseIfWrongArea(maxArea)
 
-            print(f"Series {key} has visible pane. Area={maxArea}")
+            # print(f"Series {key} has visible pane. Area={maxArea}")
             
+            # this combines the three images
+            # imgs = [cv2.imread(file) for file in group if file.endswith(".bmp")]
+            # img0 = combineImgs(imgs)
+                
+            # plot(img0)
+                
             # find group name by running OCR on image            
             # get series id from image
             groupkey = get_series_id(img0, reader, True)
-            print(f"\t> Series: {groupkey}")
+            # print(f"\t> Series: {groupkey}")
             
             if groupkey == "unknown":
                 groupkey = key
@@ -297,6 +329,10 @@ if __name__ == "__main__":
                     
         except CropException:
             pass
+        
+        except Exception as e:
+            print(f" << Exception in Series {key}: >>")
+            print(str(e))
         
         
 """

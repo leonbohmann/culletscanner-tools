@@ -176,11 +176,22 @@ def prepare_ocr(img0, scale = 1, strength = 1):
     # img = cv2.dilate(img, kernel, iterations=strength)
     return img
 
-def combineImgs(imgs):
-    dest = cv2.add(255-imgs[0],255-imgs[1])
-    dest = cv2.add(255-imgs[2], dest)
+def combineImgs(imgs, resultSize = 4000):
+    """
+    Images:
+    Blue
+    Green
+    Transmission
+
+    Args:
+        imgs (list<img>): _description_
+
+    Returns:
+        img: _description_
+    """
+    dest = cv2.multiply(crop_perspective(imgs[1], resultSize)[1],crop_perspective(imgs[2], resultSize)[1])
     
-    return 255-dest
+    return dest
 
 def crop_perspective(img, size = 1000):
     """Crops a given image to its containing pane bounds. Finds smallest pane countour with 4 corner points
