@@ -236,7 +236,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
     
     parser.description = descr
-    parser.add_argument("-i", "--input-dir", help="Input directory with unsorted scan output image files.", type=str, default=r"a:\Nextcloud\Forschung\Scans")    
+    # parser.add_argument("-i", "--input-dir", help="Input directory with unsorted scan output image files.", type=str, default=r"a:\Nextcloud\Forschung\Scans")    
+    parser.add_argument("-i", "--input-dir", help="Input directory with unsorted scan output image files.", type=str, default=r"a:\Nextcloud\Forschung\Versuchsreihen neu")    
     parser.add_argument("-o", "--output-dir", help="Directory to place the filtered images in.", type=str, default=r"filtered")    
     parser.add_argument("-r", "--rotate", help="Rotate images.", type=bool, default=True)    
 
@@ -273,15 +274,11 @@ if __name__ == "__main__":
     grouped_files = {k: list(g) for k, g in groupby(sorted_files, key=get_unique_file_id)}
 
     for key, group in tqdm(grouped_files.items()):
-
-                
-        # get bitmaps from group
-        img0_path = next(file for file in group if file.endswith(".bmp") and "Blue" in file)
-        # load image and perform OCR to find specimen Identifier ([thickness].[residual_stress].[boundary].[ID])
-        img0 = cv2.imread(img0_path)
-
-
         try:
+            # get bitmaps from group
+            img0_path = next(file for file in group if file.endswith(".bmp") and "Blue" in file)
+            # load image and perform OCR to find specimen Identifier ([thickness].[residual_stress].[boundary].[ID])
+            img0 = cv2.imread(img0_path)
             maxArea, img0 = crop_perspective(img0)
             if rotate:
                 img0 = rotate_img(img0, cv2.ROTATE_90_COUNTERCLOCKWISE)
@@ -331,8 +328,8 @@ if __name__ == "__main__":
             pass
         
         except Exception as e:
-            print(f" << Exception in Series {key}: >>")
-            print(str(e))
+            print(f" << Exception in Series {key} >>")
+            print(e)
         
         
 """
